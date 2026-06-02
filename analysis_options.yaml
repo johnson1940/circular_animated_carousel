@@ -1,0 +1,11 @@
+include: package:flutter_lints/flutter.yaml
+
+# Add package-specific lints here as the API stabilises. The flutter_lints
+# baseline gives us the same rules pub.dev's analyser scores against.
+linter:
+  rules:
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_final_locals
+    - sort_child_properties_last
+    - require_trailing_commas

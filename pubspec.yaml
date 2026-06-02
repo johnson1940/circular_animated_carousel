@@ -1,0 +1,28 @@
+name: circular_animated_carousel
+description: A circular, gesture-driven carousel with garland tilt, side-lift arc, focus halo, and optional entrance + nudge animations. Ideal for coupon, ticket, and card showcases.
+version: 0.1.0
+homepage: https://github.com/innopay/circular_animated_carousel
+repository: https://github.com/innopay/circular_animated_carousel
+issue_tracker: https://github.com/innopay/circular_animated_carousel/issues
+
+topics:
+  - carousel
+  - animation
+  - widget
+  - slider
+  - cards
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
