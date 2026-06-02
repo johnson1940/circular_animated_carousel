@@ -12,10 +12,10 @@ A circular, gesture-driven carousel for **any widget** — cards, images, ticket
   </tr>
   <tr>
     <td align="center">
-      <video src="doc/up_arc.mp4" width="320" autoplay loop muted playsinline></video>
+      <img src="doc/up_arc.webp" width="320" alt="ArcDirection.up demo">
     </td>
     <td align="center">
-      <video src="doc/down_arc.mp4" width="320" autoplay loop muted playsinline></video>
+      <img src="doc/down_arc.webp" width="320" alt="ArcDirection.down demo">
     </td>
   </tr>
   <tr>
@@ -23,8 +23,6 @@ A circular, gesture-driven carousel for **any widget** — cards, images, ticket
     <td align="center">Side items drop <strong>below</strong>, tilt outward (bowl).</td>
   </tr>
 </table>
-
-> Videos render inline on GitHub. On pub.dev the `<video>` tag is stripped — view the demos on the [GitHub repo](https://github.com/innopay/circular_animated_carousel#circular_animated_carousel).
 
 ## Install
 
