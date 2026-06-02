@@ -12,10 +12,10 @@ A circular, gesture-driven carousel for **any widget** — cards, images, ticket
   </tr>
   <tr>
     <td align="center">
-      <img src="doc/up_arc.webp" width="320" alt="ArcDirection.up demo">
+      <img src="doc/arc_up.webp" width="320" alt="ArcDirection.up demo">
     </td>
     <td align="center">
-      <img src="doc/down_arc.webp" width="320" alt="ArcDirection.down demo">
+      <img src="doc/arc_down.webp" width="320" alt="ArcDirection.down demo">
     </td>
   </tr>
   <tr>
