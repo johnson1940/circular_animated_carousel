@@ -1,6 +1,6 @@
 name: circular_animated_carousel
 description: A circular, gesture-driven carousel with garland tilt, side-lift arc, focus halo, and optional entrance + nudge animations. Ideal for coupon, ticket, and card showcases.
-version: 0.1.0
+version: 0.1.0+1
 homepage: https://github.com/johnson1940/circular_animated_carousel
 repository: https://github.com/johnson1940/circular_animated_carousel
 issue_tracker: https://github.com/johnson1940/circular_animated_carousel/issues
