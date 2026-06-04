@@ -107,7 +107,7 @@ class _MainScreenState extends State<MainScreen> {
                     unfocusedScale: 0.8,
                     unfocusedOpacity: 0.5,
                     enableEntrance: true,
-                    arcDirection: ArcDirection.down,
+                    arcDirection: ArcDirection.up,
                     entranceStartOffset: -9.0,
                     entranceDuration: const Duration(milliseconds: 2400),
                     sideLift: 120,
