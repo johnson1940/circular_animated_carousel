@@ -11,10 +11,10 @@ A premium, gesture-driven circular carousel for Flutter. Designed for high-end s
 ### 🌟 Vision
 Most carousels are flat. This one has **depth**. As you scroll, items rise and tilt along a gentle arc, receding into 3D space with configurable perspective. It's not just a slider; it's a physical experience.
 
-| ArcDirection.up (Smile) | ArcDirection.down (Bowl) |
-| :---: | :---: |
-| <img src="doc/arc_up.webp" width="300"> | <img src="doc/arc_down.webp" width="300"> |
-| *Side items rise above & tilt inward.* | *Side items drop below & tilt outward.* |
+|        ArcDirection.up (Smile)         |         ArcDirection.down (Bowl)         |
+|:--------------------------------------:|:----------------------------------------:|
+| <img src="doc/arc_up.gif" width="300"> | <img src="doc/arc_down.gif" width="300"> |
+| *Side items rise above & tilt inward.* | *Side items drop below & tilt outward.*  |
 
 ---
 
