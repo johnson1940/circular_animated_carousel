@@ -254,4 +254,88 @@ void main() {
     expect(taps, isNotEmpty);
     expect(taps.last, 0);
   });
+
+  group('route teardown', () {
+    testWidgets(
+        'settles the entrance when the hosting route pops (no focus flash)',
+        (tester) async {
+      final navKey = GlobalKey<NavigatorState>();
+      // Non-focused indices that momentarily reached full focus while the
+      // route was popping — i.e. a neighbour "flash" mid-slide-out.
+      final flashedWhilePopping = <int>{};
+      var popping = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navKey,
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => Center(
+                child: ElevatedButton(
+                  onPressed: () => navKey.currentState!.push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => Scaffold(
+                        body: Center(
+                          child: CircularAnimatedCarousel(
+                            itemCount: 5,
+                            circular: true,
+                            initialPosition: 0,
+                            // Long position-stream entrance: `_position`
+                            // sweeps -9 → 0 through every index.
+                            entranceStartOffset: -9.0,
+                            entranceDuration:
+                                const Duration(milliseconds: 2000),
+                            enableNudge: false,
+                            itemBuilder: (_, info) {
+                              // When settled at index 0, every neighbour
+                              // has focusWeight 0. Any non-focused index
+                              // climbing past 0.5 means the carousel is
+                              // still streaming — a neighbour sweeping
+                              // through focus = the flash.
+                              if (popping &&
+                                  info.focusWeight > 0.5 &&
+                                  info.index != 0) {
+                                flashedWhilePopping.add(info.index);
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  child: const Text('go'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Push the carousel route and advance only partway into the 2 s
+      // entrance, so `_position` is still streaming when we pop.
+      await tester.tap(find.text('go'));
+      await tester.pump(); // build the pushed route
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Pop and pump through the exit transition in fine steps so we
+      // actually sample frames while a still-running entrance would be
+      // streaming neighbours through focus.
+      popping = true;
+      navKey.currentState!.pop();
+      for (var i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.pumpAndSettle();
+
+      expect(
+        flashedWhilePopping,
+        isEmpty,
+        reason: 'no non-focused index should reach full focus during the '
+            'route pop — the entrance must settle to initialPosition '
+            'instead of streaming through neighbours while the page '
+            'slides away',
+      );
+    });
+  });
 }

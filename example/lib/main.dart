@@ -19,7 +19,32 @@ class CarouselExampleApp extends StatelessWidget {
         colorSchemeSeed: Colors.deepPurple,
         scaffoldBackgroundColor: const Color(0xFF0E0E12),
       ),
-      home: const _DemoScreen(),
+      home: const HomeScreen(),
+    );
+  }
+}
+
+/// Landing screen — a single button. Tapping it pushes the carousel
+/// demo, which plays its entrance animation fresh on every mount (so
+/// returning here and tapping again replays the stream-in).
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: FilledButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const _DemoScreen()),
+          ),
+          icon: const Icon(Icons.auto_awesome),
+          label: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 6),
+            child: Text('Show carousel'),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -73,6 +98,10 @@ class _DemoScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Carousel'),
+        backgroundColor: Colors.transparent,
+      ),
       body: Center(
         child: CircularAnimatedCarousel(
           itemCount: _quotes.length,
