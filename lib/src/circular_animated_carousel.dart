@@ -323,9 +323,8 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
   void initState() {
     super.initState();
     widget.controller?.attach(this);
-    _position = _positionEntrance
-        ? widget.entranceStartOffset
-        : widget.initialPosition;
+    _position =
+        _positionEntrance ? widget.entranceStartOffset : widget.initialPosition;
 
     _snapController = AnimationController(
       vsync: this,
@@ -465,6 +464,50 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
         oldWidget.autoplayInterval != widget.autoplayInterval) {
       _restartAutoplay();
     }
+    if (oldWidget.itemCount != widget.itemCount) {
+      _handleItemCountChange();
+    }
+  }
+
+  /// Re-validates [_position] after the data length changes under us. In
+  /// linear mode a now-out-of-range position would leave the render
+  /// window empty — the builder skips indices outside `[0, itemCount)`,
+  /// so the carousel would go blank until the user dragged. Clamp back
+  /// into range (and abort any snap aimed at the old, larger range).
+  /// Circular mode wraps indices already, so the raw position can stay.
+  void _handleItemCountChange() {
+    if (_snapController.isAnimating) _snapController.stop();
+    if (!widget.circular) {
+      final max = (widget.itemCount - 1).toDouble();
+      final clamped = _position.clamp(0.0, max);
+      if (clamped != _position) {
+        _position = clamped;
+        widget.onPositionChanged?.call(_position);
+      }
+    }
+    _notifyIndexIfChanged();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    // Re-mounted after being reparented (e.g. moved via a GlobalKey, or a
+    // key change). Re-attach to the controller — [deactivate] released it
+    // on the way out. (Not called on first mount; [initState] handles
+    // that.)
+    widget.controller?.attach(this);
+  }
+
+  @override
+  void deactivate() {
+    // Release the controller the moment we leave the tree, not in
+    // [dispose]. During a reparent/key-change the new carousel's
+    // [initState] runs *before* the old element's [dispose], so detaching
+    // only in dispose would trip the controller's single-owner assert (or
+    // null out the new carousel's binding). Detaching here keeps one
+    // controller cleanly handed off to one carousel at a time.
+    widget.controller?.detach();
+    super.deactivate();
   }
 
   @override
@@ -475,7 +518,6 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
     _scheduledTimers.clear();
     _stopAutoplay();
     _route?.animation?.removeStatusListener(_handleRouteStatus);
-    widget.controller?.detach();
     _snapController
       ..removeListener(_onSnapTick)
       ..dispose();
@@ -567,7 +609,15 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
     if (!widget.autoplay) return;
     _autoplayTimer = Timer.periodic(widget.autoplayInterval, (_) {
       if (!mounted) return;
-      animateToIndex(_position.round() + 1);
+      final next = _position.round() + 1;
+      // Linear mode has nowhere left to go past the last index, so stop
+      // the timer rather than ticking uselessly forever. Circular mode
+      // wraps, so it keeps advancing.
+      if (!widget.circular && next > widget.itemCount - 1) {
+        _stopAutoplay();
+        return;
+      }
+      animateToIndex(next);
     });
   }
 
@@ -640,8 +690,7 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
     // Linear mode: ignore out-of-range settled values (shouldn't happen
     // with the drag clamp but defensive). Circular mode: settled is
     // already wrapped to [0, itemCount) by _wrappedIndex.
-    if (!widget.circular &&
-        (settled < 0 || settled >= widget.itemCount)) {
+    if (!widget.circular && (settled < 0 || settled >= widget.itemCount)) {
       return;
     }
     _lastReportedIndex = settled;
@@ -715,9 +764,10 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
         // multiplied by this so the layout looks identical across
         // screen sizes. When referenceWidth is null, no scaling
         // happens (values used as raw logical pixels).
-        final scale = widget.referenceWidth != null && widget.referenceWidth! > 0
-            ? width / widget.referenceWidth!
-            : 1.0;
+        final scale =
+            widget.referenceWidth != null && widget.referenceWidth! > 0
+                ? width / widget.referenceWidth!
+                : 1.0;
         // `itemSpacing` override is treated as a value designed for
         // referenceWidth, so it scales like the rest of the dimensions.
         // `viewportFraction` is already a viewport-relative ratio, so
@@ -748,7 +798,6 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
     // slide starts. Returning no children keeps the layout in place
     // (the outer SizedBox still reserves space) but nothing paints.
     if (_entranceWaiting) return const <Widget>[];
-
 
     // Two entrance modes:
     //   • position-based: `_position` itself is streaming from
@@ -784,7 +833,15 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
     final centerIdx = _position.round();
     final entries = <_CarouselEntry>[];
 
-    for (var i = centerIdx - 2; i <= centerIdx + 2; i++) {
+    // How many slots either side of the centre could still fall within
+    // maxRenderDistance. `_position` sits within ±0.5 of `centerIdx`, so
+    // the farthest qualifying integer offset is `ceil(maxRenderDistance +
+    // 0.5)`. (At the default 1.5 this is 2, matching the old hard-coded
+    // window — but now raising maxRenderDistance actually widens it
+    // instead of being silently capped.) The per-item distance filter
+    // below still drops anything genuinely out of range.
+    final span = (widget.maxRenderDistance + 0.5).ceil();
+    for (var i = centerIdx - span; i <= centerIdx + span; i++) {
       // Bounded mode skips indices outside the data range. Infinite mode
       // lets the builder receive negative or > itemCount indices — the
       // builder is expected to wrap via modulo when reading content.
@@ -810,10 +867,9 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
       final focusWeight = (1.0 - clamped.abs()).clamp(0.0, 1.0);
 
       // Nudge bob — only the focused card (focusWeight ≈ 1).
-      final nudgeDy =
-          Curves.easeInOut.transform(_nudgeController.value) *
-              effNudgeAmplitude *
-              focusWeight;
+      final nudgeDy = Curves.easeInOut.transform(_nudgeController.value) *
+          effNudgeAmplitude *
+          focusWeight;
 
       final dx = offset * itemSpacing + entranceX;
 
