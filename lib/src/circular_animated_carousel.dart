@@ -292,6 +292,16 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
   /// just touched the carousel (and `pauseOnInteraction` is on).
   Timer? _autoplayTimer;
 
+  /// The [ModalRoute] hosting this carousel, if any. We watch its primary
+  /// animation so that the instant the route starts popping we can freeze
+  /// the entrance/nudge and settle to the resting position. Without this,
+  /// the intro animations keep ticking through the route's ~300 ms exit
+  /// transition (the outgoing route stays on-stage, so its `TickerMode`
+  /// stays enabled), and a neighbour sweeping through focus mid-stream
+  /// "flashes" as the focused card while the page slides away. Null when
+  /// the carousel isn't inside a route (e.g. embedded in an overlay).
+  ModalRoute<dynamic>? _route;
+
   /// Cancellable timers for entrance/nudge/autoplay-start delays. We
   /// hold these so [dispose] can cancel any still-pending fires —
   /// otherwise the `flutter_test` `!timersPending` invariant would fail
@@ -381,6 +391,58 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Re-resolve the hosting route whenever our dependencies change
+    // (covers being moved between routes, though that's rare). We listen
+    // to the route's primary animation status so we can settle the
+    // carousel the moment a pop starts — see [_route] and
+    // [_handleRouteStatus].
+    final route = ModalRoute.of(context);
+    if (route != _route) {
+      _route?.animation?.removeStatusListener(_handleRouteStatus);
+      _route = route;
+      _route?.animation?.addStatusListener(_handleRouteStatus);
+    }
+  }
+
+  /// Fires when the hosting route's primary animation changes status.
+  /// [AnimationStatus.reverse] means the route is popping (sliding out),
+  /// which is exactly when we must stop the still-running intro
+  /// animations — otherwise a neighbour mid-stream flashes as focused
+  /// while the page slides away. See [_settleNow].
+  void _handleRouteStatus(AnimationStatus status) {
+    if (status == AnimationStatus.reverse && mounted) {
+      setState(_settleNow);
+    }
+  }
+
+  /// Freezes any in-flight intro animations and snaps the carousel to its
+  /// resting position. Called when the hosting route begins to pop so the
+  /// frame painted during the exit transition shows the settled layout
+  /// (focused item centred, neighbours at the sides) rather than a card
+  /// caught sweeping through focus. A no-op once everything has settled.
+  void _settleNow() {
+    _entranceWaiting = false;
+    // Complete — not merely stop — the entrance so BOTH modes land in
+    // their finished state: position-stream → `_position` reaches
+    // `initialPosition` (via _onEntranceTick), displacement → `entranceX`
+    // collapses to 0. Stopping mid-flight would leave displacement cards
+    // frozen off-screen right.
+    if (_entranceController.value != 1.0) _entranceController.value = 1.0;
+    if (_nudgeController.value != 0.0) {
+      _nudgeController
+        ..stop()
+        ..value = 0.0;
+    }
+    if (_snapController.isAnimating) {
+      _snapController.stop();
+      _position = (_snapAnim?.value ?? _position).roundToDouble();
+    }
+    if (_positionEntrance) _position = widget.initialPosition;
+  }
+
   /// Tracked replacement for `Future.delayed` — schedules [action] after
   /// [delay] using a real Timer that we hold in [_scheduledTimers] and
   /// cancel in [dispose]. The action only fires if the widget is still
@@ -412,6 +474,7 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
     }
     _scheduledTimers.clear();
     _stopAutoplay();
+    _route?.animation?.removeStatusListener(_handleRouteStatus);
     widget.controller?.detach();
     _snapController
       ..removeListener(_onSnapTick)
