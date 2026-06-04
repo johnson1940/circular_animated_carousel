@@ -138,8 +138,7 @@ void main() {
       controller.dispose();
     });
 
-    testWidgets('jumpTo() moves immediately without animation',
-        (tester) async {
+    testWidgets('jumpTo() moves immediately without animation', (tester) async {
       final controller = CircularAnimatedCarouselController();
 
       await tester.pumpWidget(
@@ -336,6 +335,153 @@ void main() {
             'instead of streaming through neighbours while the page '
             'slides away',
       );
+    });
+  });
+
+  group('robustness', () {
+    Widget host({
+      required int itemCount,
+      CircularAnimatedCarouselController? controller,
+      Key? carouselKey,
+      double maxRenderDistance = 1.5,
+      bool circular = false,
+      void Function(int index)? onBuild,
+    }) {
+      return MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 400,
+            child: CircularAnimatedCarousel(
+              key: carouselKey,
+              controller: controller,
+              itemCount: itemCount,
+              circular: circular,
+              maxRenderDistance: maxRenderDistance,
+              enableEntrance: false,
+              enableNudge: false,
+              itemBuilder: (_, info) {
+                onBuild?.call(info.index);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('clamps position when itemCount shrinks (no blank carousel)',
+        (tester) async {
+      final controller = CircularAnimatedCarouselController();
+      final built = <int>[];
+
+      await tester.pumpWidget(
+        host(itemCount: 10, controller: controller, onBuild: built.add),
+      );
+      controller.jumpTo(8);
+      await tester.pump();
+      expect(controller.currentIndex, 8);
+
+      // Shrink the data to 3 items — position 8 is now out of range.
+      built.clear();
+      await tester.pumpWidget(
+        host(itemCount: 3, controller: controller, onBuild: built.add),
+      );
+      await tester.pump();
+
+      expect(
+        controller.currentIndex,
+        2,
+        reason: 'position should clamp to itemCount - 1',
+      );
+      expect(
+        built,
+        isNotEmpty,
+        reason: 'the render window must not be empty after the shrink',
+      );
+      controller.dispose();
+    });
+
+    testWidgets('maxRenderDistance beyond 2 renders further items',
+        (tester) async {
+      final built = <int>{};
+      await tester.pumpWidget(
+        host(itemCount: 10, maxRenderDistance: 3.0, onBuild: built.add),
+      );
+
+      // Within distance 3.0 of position 0 (linear): indices 0..3. The old
+      // hard-coded ±2 window would have stopped at 2.
+      expect(built, containsAll([0, 1, 2, 3]));
+    });
+
+    testWidgets('controller survives the carousel being reparented',
+        (tester) async {
+      final controller = CircularAnimatedCarouselController();
+
+      await tester.pumpWidget(
+        host(
+          itemCount: 5,
+          controller: controller,
+          carouselKey: const ValueKey('a'),
+        ),
+      );
+      expect(controller.hasClient, isTrue);
+
+      // Swap the key → old State deactivates, new State initialises. The
+      // new initState runs before the old dispose, so detaching only in
+      // dispose would trip the single-owner assert.
+      await tester.pumpWidget(
+        host(
+          itemCount: 5,
+          controller: controller,
+          carouselKey: const ValueKey('b'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(controller.hasClient, isTrue);
+      expect(controller.currentIndex, 0);
+      controller.dispose();
+    });
+
+    testWidgets('autoplay stops advancing at the end of a linear list',
+        (tester) async {
+      final controller = CircularAnimatedCarouselController();
+      final reported = <int>[];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 400,
+              child: CircularAnimatedCarousel(
+                controller: controller,
+                itemCount: 3,
+                circular: false,
+                autoplay: true,
+                autoplayInterval: const Duration(milliseconds: 300),
+                enableEntrance: false,
+                enableNudge: false,
+                onIndexChanged: reported.add,
+                itemBuilder: (_, __) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Run well past the time it takes to reach the last index.
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      await tester.pumpAndSettle();
+
+      expect(controller.currentIndex, 2);
+      expect(
+        reported,
+        isNot(contains(greaterThan(2))),
+        reason: 'autoplay must not advance past the last linear index',
+      );
+      controller.dispose();
     });
   });
 }

@@ -151,6 +151,7 @@ class _ShowcaseScreenState extends State<ShowcaseScreen> {
                   autoplay: _autoplay,
                   enableSnap: _snap,
                   arcDirection: _arc,
+                  itemSpacing: 280,
                   entranceDuration: const Duration(milliseconds: 1000),
                   // Enabling onTap turns on tap-to-focus: tapping a side
                   // card animates it into the centre.
