@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'controller.dart';
@@ -185,6 +186,28 @@ class CircularAnimatedCarousel extends StatefulWidget {
   /// as raw logical pixels regardless of viewport.
   final double? referenceWidth;
 
+  /// Perspective distortion applied to side cards as they tilt.
+  /// `0.0` is flat (no perspective); higher values (e.g. `0.002`)
+  /// produce a more dramatic 3D effect where the "top" of a tilted
+  /// card feels closer or farther.
+  ///
+  /// Default `0.001` (subtle depth).
+  final double perspective;
+
+  /// Scale applied to the item when it is perfectly focused.
+  /// Defaults to `1.0`.
+  final double focusedScale;
+
+  /// Scale applied to the item when it is at the edge of the render distance.
+  /// Defaults to `1.0` (no scaling).
+  final double unfocusedScale;
+
+  /// Opacity applied to the item when it is at the edge of the render distance.
+  /// The focused item always has `1.0` opacity.
+  ///
+  /// Defaults to `1.0` (no fading). Try `0.5` for a "spotlight" effect.
+  final double unfocusedOpacity;
+
   /// Fires when an item is tapped (a tap that didn't escalate into a
   /// drag). Receives the tapped item's index — already wrapped to
   /// `[0, itemCount)` in circular mode.
@@ -237,6 +260,10 @@ class CircularAnimatedCarousel extends StatefulWidget {
     this.pauseOnInteraction = true,
     this.referenceWidth = 360.0,
     this.arcDirection = ArcDirection.up,
+    this.perspective = 0.001,
+    this.focusedScale = 1.0,
+    this.unfocusedScale = 1.0,
+    this.unfocusedOpacity = 1.0,
     this.controller,
     this.onTap,
     this.onIndexChanged,
@@ -694,6 +721,7 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
       return;
     }
     _lastReportedIndex = settled;
+    HapticFeedback.selectionClick();
     widget.onIndexChanged?.call(settled);
   }
 
@@ -714,8 +742,8 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
   }
 
   void _onDragEnd(DragEndDetails details, double itemSpacing) {
-    final velocityX = details.velocity.pixelsPerSecond.dx;
-    final flick = -velocityX / itemSpacing * widget.flickFactor;
+    final velocity = details.velocity.pixelsPerSecond.dx;
+    final flick = -velocity / itemSpacing * widget.flickFactor;
     // Resume autoplay when the finger lifts, regardless of snap mode.
     if (widget.pauseOnInteraction && widget.autoplay) _startAutoplay();
 
@@ -775,17 +803,38 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
         final itemSpacing = widget.itemSpacing != null
             ? widget.itemSpacing! * scale
             : width * widget.viewportFraction;
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragStart: _onDragStart,
-          onHorizontalDragUpdate: (d) => _onDragUpdate(d, itemSpacing),
-          onHorizontalDragEnd: (d) => _onDragEnd(d, itemSpacing),
-          child: SizedBox(
-            height: (widget.itemHeight + widget.sideLift) * scale + 40 * scale,
-            width: double.infinity,
-            child: Stack(
-              alignment: Alignment.center,
-              children: _buildCards(itemSpacing, width, scale),
+        return Semantics(
+          label: 'Carousel with ${widget.itemCount} items',
+          explicitChildNodes: true,
+          onIncrease: () => animateToIndex(_position.round() + 1),
+          onDecrease: () => animateToIndex(_position.round() - 1),
+          child: Focus(
+            onKeyEvent: (FocusNode node, KeyEvent event) {
+              if (event is KeyDownEvent) {
+                if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                  animateToIndex(_position.round() + 1);
+                  return KeyEventResult.handled;
+                } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                  animateToIndex(_position.round() - 1);
+                  return KeyEventResult.handled;
+                }
+              }
+              return KeyEventResult.ignored;
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragStart: _onDragStart,
+              onHorizontalDragUpdate: (d) => _onDragUpdate(d, itemSpacing),
+              onHorizontalDragEnd: (d) => _onDragEnd(d, itemSpacing),
+              child: SizedBox(
+                height:
+                    (widget.itemHeight + widget.sideLift) * scale + 40 * scale,
+                width: double.infinity,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: _buildCards(itemSpacing, width, scale),
+                ),
+              ),
             ),
           ),
         );
@@ -858,8 +907,14 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
       //   • arcSign = +1 (ArcDirection.down): tops lean outward,
       //     cards drop below focus → bowl / inverted smile.
       final angle = arcSign * clamped * widget.maxTilt;
+
+      // Subtle Y-rotation makes side cards "face" the center, which
+      // combines with the perspective matrix to create physical depth.
+      final angleY = -clamped * 0.2;
+
       final swing = clamped.abs() * widget.swingAngleMax;
-      final dy = arcSign *
+      final double dx = offset * itemSpacing + entranceX;
+      final double dy = arcSign *
           effSideLift *
           (1 - math.cos(swing)) /
           (1 - math.cos(widget.swingAngleMax));
@@ -871,7 +926,13 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
           effNudgeAmplitude *
           focusWeight;
 
-      final dx = offset * itemSpacing + entranceX;
+      // Scaling logic:
+      final scaleVal = widget.unfocusedScale +
+          (widget.focusedScale - widget.unfocusedScale) * focusWeight;
+
+      // Opacity logic:
+      final opacityVal = widget.unfocusedOpacity +
+          (1.0 - widget.unfocusedOpacity) * focusWeight;
 
       // `index` handed to the builder is already wrapped to
       // [0, itemCount) when circular is on — so the builder can index
@@ -888,6 +949,15 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
       // genuine tap win over the outer horizontal drag, so this doesn't
       // interfere with scrolling.
       Widget card = widget.itemBuilder(context, info);
+
+      // Accessibility: wrap each card with semantics info.
+      final isFocused = distance < 0.5;
+      card = Semantics(
+        label: 'Item ${info.index + 1} of ${widget.itemCount}',
+        selected: isFocused,
+        child: card,
+      );
+
       if (widget.onTap != null) {
         final rawIndex = i;
         card = GestureDetector(
@@ -896,6 +966,13 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
           child: card,
         );
       }
+
+      // Matrix transformation:
+      final matrix = Matrix4.identity()..setEntry(3, 2, widget.perspective);
+
+      matrix
+        ..rotateY(angleY)
+        ..rotateZ(angle);
 
       entries.add(
         _CarouselEntry(
@@ -908,18 +985,25 @@ class _CircularAnimatedCarouselState extends State<CircularAnimatedCarousel>
             key: ValueKey('cac-card-$i'),
             child: Transform.translate(
               offset: Offset(dx, dy + nudgeDy),
-              child: Transform.rotate(
-                angle: angle,
+              child: Transform(
+                transform: matrix,
                 alignment: Alignment.center,
-                // RepaintBoundary sits inside the transforms so the card
-                // subtree is rasterised once and cached as a GPU layer.
-                // Subsequent drags / nudges just composite the cached
-                // bitmap instead of repainting the whole card.
-                child: RepaintBoundary(
-                  child: SizedBox(
-                    width: effItemWidth,
-                    height: effItemHeight,
-                    child: card,
+                child: Transform.scale(
+                  scale: scaleVal,
+                  alignment: Alignment.center,
+                  // RepaintBoundary sits inside the transforms so the card
+                  // subtree is rasterised once and cached as a GPU layer.
+                  // Subsequent drags / nudges just composite the cached
+                  // bitmap instead of repainting the whole card.
+                  child: Opacity(
+                    opacity: opacityVal.clamp(0.0, 1.0),
+                    child: RepaintBoundary(
+                      child: SizedBox(
+                        width: effItemWidth,
+                        height: effItemHeight,
+                        child: card,
+                      ),
+                    ),
                   ),
                 ),
               ),

@@ -1,5 +1,6 @@
 import 'package:circular_animated_carousel/circular_animated_carousel.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -482,6 +483,174 @@ void main() {
         reason: 'autoplay must not advance past the last linear index',
       );
       controller.dispose();
+    });
+
+    testWidgets('perspective is applied to the Transform matrix',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CircularAnimatedCarousel(
+              itemCount: 5,
+              perspective: 0.005,
+              enableEntrance: false,
+              enableNudge: false,
+              itemBuilder: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      );
+
+      final transformFinder = find.byType(Transform);
+      // There are multiple Transforms (translate and the one with perspective).
+      // We look for the one that isn't just a translation.
+      final transforms = tester.widgetList<Transform>(transformFinder);
+      final perspectiveTransform = transforms.firstWhere(
+        (t) => t.transform.entry(3, 2) == 0.005,
+      );
+
+      expect(perspectiveTransform, isNotNull);
+    });
+  });
+
+  group('Accessibility', () {
+    testWidgets('exposes semantics for carousel and items', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CircularAnimatedCarousel(
+              itemCount: 3,
+              enableEntrance: false,
+              enableNudge: false,
+              itemBuilder: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      );
+
+      // Check main carousel semantics
+      expect(
+        find.bySemanticsLabel('Carousel with 3 items'),
+        findsOneWidget,
+      );
+
+      // Check item semantics. Note: Index 0 is focused at start.
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('Item 1 of 3')),
+        matchesSemantics(
+          label: 'Item 1 of 3',
+          isSelected: true,
+          hasSelectedState: true,
+        ),
+      );
+
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('Item 2 of 3')),
+        matchesSemantics(
+          label: 'Item 2 of 3',
+          isSelected: false,
+          hasSelectedState: true,
+        ),
+      );
+
+      handle.dispose();
+    });
+
+    testWidgets('navigates with arrow keys', (tester) async {
+      final controller = CircularAnimatedCarouselController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CircularAnimatedCarousel(
+              controller: controller,
+              itemCount: 5,
+              enableEntrance: false,
+              enableNudge: false,
+              itemBuilder: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      );
+
+      // Focus the carousel
+      final focusNode = Focus.of(
+        tester.element(find.byType(GestureDetector).first),
+      );
+      focusNode.requestFocus();
+      await tester.pump();
+
+      // Right arrow to go next
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(controller.currentIndex, 1);
+
+      // Left arrow to go back
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      expect(controller.currentIndex, 0);
+
+      controller.dispose();
+    });
+  });
+
+  group('Scaling', () {
+    testWidgets('applies scaling based on focusWeight', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CircularAnimatedCarousel(
+              itemCount: 3,
+              focusedScale: 1.5,
+              unfocusedScale: 0.5,
+              enableEntrance: false,
+              enableNudge: false,
+              itemBuilder: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      );
+
+      final transforms = tester.widgetList<Transform>(find.byType(Transform));
+      final scaleTransform = transforms.firstWhere((t) {
+        final matrix = t.transform;
+        return matrix.entry(0, 0) == 1.5;
+      });
+      expect(scaleTransform, isNotNull);
+    });
+
+    testWidgets('applies opacity based on focusWeight', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CircularAnimatedCarousel(
+              itemCount: 3,
+              unfocusedOpacity: 0.2,
+              enableEntrance: false,
+              enableNudge: false,
+              itemBuilder: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      );
+
+      // Index 0 is focused (opacity 1.0)
+      final opacity0 = tester.widget<Opacity>(
+        find.descendant(
+          of: find.byKey(const ValueKey('cac-card-0')),
+          matching: find.byType(Opacity),
+        ).first,
+      );
+      expect(opacity0.opacity, 1.0);
+
+      // Index 1 is at distance 1.0 (opacity should be 0.2)
+      final opacity1 = tester.widget<Opacity>(
+        find.descendant(
+          of: find.byKey(const ValueKey('cac-card-1')),
+          matching: find.byType(Opacity),
+        ).first,
+      );
+      expect(opacity1.opacity, closeTo(0.2, 0.01));
     });
   });
 }
